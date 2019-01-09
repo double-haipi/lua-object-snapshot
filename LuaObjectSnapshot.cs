@@ -12,6 +12,26 @@ using System.Collections.Generic;
 
 namespace com.tencent.pandora.tools
 {
+	[StructLayout(layoutKind: LayoutKind.Sequential)]
+    public struct LuaDebug
+    {
+       public int eventId;
+        public IntPtr name;            /* (n) */
+        public IntPtr namewhat;        /* (n) `global', `local', `field', `method' */
+        public IntPtr what;            /* (S) `Lua', `C', `main', `tail' */
+        public IntPtr source;          /* (S) */
+        public int currentline;        /* (l) */
+        public int nups;               /* (u) number of upvalues */
+        public int linedefined;        /* (S) */
+        public int lastlinedefined;    /* (S) */
+
+        [MarshalAs(unmanagedType: UnmanagedType.ByValArray,SizeConst = 256)]
+        public Byte[] short_src;         /* (S) */
+                                         
+        int i_ci;                       /* active function */
+    }
+
+	
     public class LuaObjectSnapshot
     {
         private static int LUA_MINSTACK = 20;
@@ -273,13 +293,21 @@ namespace com.tencent.pandora.tools
 
                 MarkObject(luaState, dumpLuaState, functionPointer, name != "" ? name : "[upvalue]");
             }
+			
+			LuaDebug luaDebug = new LuaDebug();
+            IntPtr luaDebugPtr = Marshal.AllocHGlobal(Marshal.SizeOf(luaDebug));
+            Marshal.StructureToPtr(luaDebug, luaDebugPtr, true);
+            pua_getinfo(luaState, ">nSl", luaDebugPtr);
+            LuaDebug luaDebugInfo = (LuaDebug)Marshal.PtrToStructure(luaDebugPtr, typeof(LuaDebug));
 
-            //LuaDebug luaDebugInfo = new LuaDebug();
-            //LuaDLL.pua_getinfo(luaState, ">l", ref luaDebugInfo);
             //这里可能会生成很多字符串,注意看内存
-            //string functionDescrition = string.Format("{0}:{1}", new string(luaDebugInfo.shortSource), luaDebugInfo.lineDefined);
-            //LuaDLL.pua_pushstring(dumpLuaState, functionDescrition);
-            //RawSet(dumpLuaState, SOURCE, functionPointer);
+            string functionDescrition = string.Format("{0}", Encoding.UTF8.GetString(luaDebugInfo.short_src).Substring(3));
+            functionDescrition += luaDebugInfo.linedefined.ToString();
+            LuaDLL.pua_pushstring(dumpLuaState, functionDescrition);
+            RawSet(dumpLuaState, SOURCE, functionPointer);
+            Marshal.FreeHGlobal(luaDebugPtr);
+			
+			
             LuaDLL.pua_pop(luaState, 1);
         }
 
@@ -418,5 +446,9 @@ namespace com.tencent.pandora.tools
             LuaDLL.pua_pop(luaState, 1);
             return snapshot;
         }
+		
+		 //ar 是LuaDebug 型指針
+        [DllImport("pandora", CallingConvention = CallingConvention.Cdecl)]
+        public static extern int pua_getinfo(IntPtr L,string what,IntPtr ar);
     }
 }
